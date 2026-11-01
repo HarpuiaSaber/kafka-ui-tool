@@ -1,0 +1,1568 @@
+import { Button, CheckBox, ComboBox, LineEdit, ListView, ScrollView, TextEdit } from "std-widgets.slint";
+
+export struct SavedConnection {
+    id: string,
+    name: string,
+    servers: string,
+    security: string,
+}
+
+export struct TopicRow {
+    name: string,
+    partition-count: string,
+    preview-wide: bool,
+}
+
+export struct PartitionRow {
+    id: string,
+    leader: string,
+    replicas: string,
+    isr: string,
+    low-offset: string,
+    high-offset: string,
+}
+
+export struct ConfigurationRow { name: string, value: string }
+
+export struct MessageRow {
+    partition: string,
+    offset: string,
+    timestamp: string,
+    key-preview: string,
+    value-preview: string,
+}
+
+export struct HeaderRow { name: string, value: string, line-numbers: string }
+
+// These controls intentionally do not use std-widgets so the Messages panel
+// has the fixed spacing, borders, and palette of the supplied reference.
+component MessageField inherits VerticalLayout {
+    in property <string> label;
+    in property <string> placeholder;
+    in property <string> error;
+    in property <bool> enabled: true;
+    in-out property <string> value;
+    callback edited();
+    // Each use supplies a fixed half-row width from its owning layout.
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    spacing: 4px;
+    Text { height: 12px; text: root.label; color: #334155; font-size: 10px; font-weight: 700; letter-spacing: 1px; }
+    field := Rectangle {
+        height: 32px;
+        min-width: 0px;
+        border-radius: 7px;
+        border-width: 1px;
+        border-color: input.has-focus ? #0284c7 : #cbd5e1;
+        background: root.enabled ? #ffffff : #f1f5f9;
+        input := TextInput {
+            x: 10px;
+            width: parent.width - 20px;
+            height: parent.height;
+            text <=> root.value;
+            color: #334155;
+            font-size: 12px;
+            vertical-alignment: center;
+            single-line: true;
+            enabled: root.enabled;
+            accessible-label: root.label;
+            edited => { root.edited(); }
+        }
+        if root.value == "" : Text {
+            x: 10px;
+            width: parent.width - 20px;
+            height: parent.height;
+            text: root.placeholder;
+            color: #94a3b8;
+            font-size: 12px;
+            vertical-alignment: center;
+        }
+    }
+    if root.error != "" : Text { text: root.error; color: #a92d37; font-size: 11px; min-width: 0px; wrap: word-wrap; }
+}
+
+component MessageSelect inherits VerticalLayout {
+    in property <string> label;
+    in property <string> error;
+    in property <bool> enabled: true;
+    in property <[string]> choices;
+    in-out property <string> value;
+    callback selected();
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    spacing: 4px;
+    Text { height: 12px; text: root.label; color: #334155; font-size: 10px; font-weight: 700; letter-spacing: 1px; }
+    field := Rectangle {
+        height: 32px;
+        min-width: 0px;
+        border-radius: 7px;
+        border-width: 1px;
+        border-color: field-touch.has-hover && root.enabled ? #93c5fd : #cbd5e1;
+        background: root.enabled ? #ffffff : #f1f5f9;
+        Text {
+            x: 10px;
+            width: parent.width - 38px;
+            height: parent.height;
+            text: root.value;
+            color: root.enabled ? #334155 : #94a3b8;
+            font-size: 12px;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        Image { x: parent.width - 22px; y: 12px; width: 12px; height: 8px; source: @image-url("../assets/icons/chevron-down.svg"); }
+        field-touch := TouchArea { enabled: root.enabled; clicked => { popup.show(); } }
+    }
+    if root.error != "" : Text { text: root.error; color: #a92d37; font-size: 11px; min-width: 0px; wrap: word-wrap; }
+    popup := PopupWindow {
+        x: 0px;
+        y: field.height + 2px;
+        width: root.width;
+        height: min(root.choices.length, 6) * 36px + 2px;
+        close-policy: close-on-click-outside;
+        Rectangle {
+            background: #ffffff;
+            border-color: #cbd5e1;
+            border-width: 1px;
+            border-radius: 7px;
+            VerticalLayout {
+                spacing: 0px;
+                for choice[index] in root.choices : Rectangle {
+                    height: 36px;
+                    background: choice-touch.has-hover ? #e0f2fe : choice == root.value ? #f0f9ff : #ffffff;
+                    Text { x: 12px; width: parent.width - 24px; height: parent.height; text: choice; color: #334155; font-size: 13px; vertical-alignment: center; }
+                    choice-touch := TouchArea { clicked => { root.value = choice; root.selected(); popup.close(); } }
+                }
+            }
+        }
+    }
+}
+
+component ExplorerNotice inherits Rectangle {
+    in property <string> text;
+    in property <bool> error: false;
+    in property <bool> success: false;
+    min-width: 0px;
+    vertical-stretch: 0;
+    background: root.error ? #fff0f0 : root.success ? #e7f4e9 : #fff7e6;
+    border-color: root.error ? #e4b8bd : root.success ? #b7d7bd : #e7d8b4;
+    border-width: 1px;
+    border-radius: 6px;
+    VerticalLayout {
+        padding: 10px;
+        Text {
+            text: root.text;
+            min-width: 0px;
+            wrap: word-wrap;
+            color: root.error ? #922d37 : root.success ? #245b35 : #78602e;
+            font-size: 12px;
+        }
+    }
+}
+
+component ExplorerTab inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> active: false;
+    in property <bool> enabled: true;
+    callback clicked();
+    width: 104px;
+    height: 36px;
+    background: #00000000;
+    Path {
+        width: parent.width;
+        height: parent.height;
+        fill: root.active ? #ffffff : root.enabled ? #e2eef9 : #dce6ee;
+        stroke: root.active ? #93c5fd : #cbd5e1;
+        stroke-width: 1px;
+        MoveTo { x: 12; y: 0; }
+        LineTo { x: parent.width / 1px - 12; y: 0; }
+        QuadraticTo { control-x: parent.width / 1px - 7; control-y: 0; x: parent.width / 1px - 6; y: 5; }
+        LineTo { x: parent.width / 1px; y: parent.height / 1px; }
+        LineTo { x: 0; y: parent.height / 1px; }
+        LineTo { x: 6; y: 5; }
+        QuadraticTo { control-x: 7; control-y: 0; x: 12; y: 0; }
+        Close {}
+    }
+    Image { x: 17px; y: 11px; width: 13px; height: 13px; source: root.icon; }
+    Text {
+        x: 34px;
+        width: parent.width - 44px;
+        height: parent.height;
+        text: root.text;
+        color: root.active ? #173f78 : #52748a;
+        font-size: 12px;
+        font-weight: root.active ? 700 : 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    Rectangle { x: 1px; y: parent.height - 2px; width: parent.width - 2px; height: 2px; background: root.active ? #ffffff : #00000000; }
+    TouchArea {
+        width: parent.width;
+        height: parent.height;
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+component CopyContentButton inherits Rectangle {
+    in property <bool> enabled: true;
+    callback clicked();
+    width: 28px;
+    height: 28px;
+    border-radius: 5px;
+    background: copy-touch.has-hover && root.enabled ? #f1f5f9 : #00000000;
+    Image {
+        x: 7px;
+        y: 7px;
+        width: 14px;
+        height: 14px;
+        source: @image-url("../assets/icons/copy.svg");
+    }
+    copy-touch := TouchArea { enabled: root.enabled; clicked => { root.clicked(); } }
+}
+
+component MessageDetailTab inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> active: false;
+    in property <bool> enabled: true;
+    callback clicked();
+    width: 96px;
+    height: 32px;
+    background: #00000000;
+    Path {
+        width: parent.width;
+        height: parent.height;
+        fill: root.active ? #ffffff : root.enabled ? #e2eef9 : #dce6ee;
+        stroke: root.active ? #93c5fd : #cbd5e1;
+        stroke-width: 1px;
+        MoveTo { x: 10; y: 0; }
+        LineTo { x: parent.width / 1px - 10; y: 0; }
+        QuadraticTo { control-x: parent.width / 1px - 6; control-y: 0; x: parent.width / 1px - 5; y: 4; }
+        LineTo { x: parent.width / 1px; y: parent.height / 1px; }
+        LineTo { x: 0; y: parent.height / 1px; }
+        LineTo { x: 5; y: 4; }
+        QuadraticTo { control-x: 6; control-y: 0; x: 10; y: 0; }
+        Close {}
+    }
+    Image { x: 16px; y: 10px; width: 12px; height: 12px; source: root.icon; }
+    Text {
+        x: 31px;
+        width: parent.width - 40px;
+        height: parent.height;
+        text: root.text;
+        color: root.active ? #0369a1 : #64748b;
+        font-size: 11px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    TouchArea { enabled: root.enabled; clicked => { root.clicked(); } }
+}
+
+component AccentIconButton inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> enabled: true;
+    callback clicked();
+    height: 38px;
+    width: 156px;
+    border-radius: 7px;
+    background: root.enabled ? accent-touch.has-hover ? #0369a1 : #0284c7 : #93c5fd;
+    Image { x: 16px; y: 12px; width: 14px; height: 14px; source: root.icon; }
+    Text { x: 38px; width: parent.width - 46px; height: parent.height; text: root.text; color: #ffffff; font-size: 13px; horizontal-alignment: center; vertical-alignment: center; }
+    accent-touch := TouchArea { enabled: root.enabled; clicked => { root.clicked(); } }
+}
+
+component SelectableInfoRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    min-width: 0px;
+    height: 32px;
+    vertical-stretch: 0;
+    spacing: 8px;
+    TextInput {
+        width: 142px;
+        text: root.label + ":";
+        read-only: true;
+        color: #0b5d7b;
+        font-size: 12px;
+        font-weight: 700;
+        vertical-alignment: center;
+        accessible-label: root.label + " label";
+    }
+    TextInput {
+        min-width: 0px;
+        horizontal-stretch: 1;
+        text: root.value;
+        read-only: true;
+        color: #173f78;
+        font-size: 12px;
+        font-weight: 600;
+        vertical-alignment: center;
+        accessible-label: root.label + " value";
+    }
+}
+
+component FormField inherits VerticalLayout {
+    in property <string> label;
+    in property <string> error;
+    in property <bool> enabled: true;
+    in property <bool> secret: false;
+    in-out property <string> value;
+    height: 84px;
+    vertical-stretch: 0;
+    spacing: 4px;
+    Text { height: 18px; text: root.label; color: #36566c; }
+    LineEdit {
+        height: 36px;
+        enabled: root.enabled;
+        text <=> root.value;
+        input-type: root.secret ? InputType.password : InputType.text;
+    }
+    Text { height: 18px; text: root.error; color: #a92d37; font-size: 12px; }
+}
+
+component DangerButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    callback clicked();
+    width: 72px;
+    height: 32px;
+    border-radius: 6px;
+    background: root.enabled ? #b3313d : #d8a5aa;
+    Text {
+        text: root.text;
+        color: white;
+        font-size: 12px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    TouchArea { enabled: root.enabled; clicked => { root.clicked(); } }
+}
+
+export component MainWindow inherits Window {
+    title: "Kafa UI";
+    in-out property <length> locked-window-width: 1100px;
+    in-out property <length> locked-window-height: 900px;
+    preferred-width: root.locked-window-width;
+    // Rust locks the native window to a monitor-appropriate working-area size after startup.
+    preferred-height: root.locked-window-height;
+    min-width: root.locked-window-width;
+    max-width: root.locked-window-width;
+    min-height: root.locked-window-height;
+    max-height: root.locked-window-height;
+    background: #f7f8f6;
+    // Keep this declarative so Slint applies it while creating the native window.
+    icon: @image-url("../assets/kafka-message-tool.png");
+
+    in-out property <string> route: "manager";
+    in-out property <[SavedConnection]> saved-profiles;
+    in-out property <string> selected-profile-id;
+    in-out property <string> draft-profile-id;
+    in-out property <bool> editing-saved-profile: false;
+    in-out property <string> active-profile-name;
+    in-out property <bool> operation-pending: false;
+    property <bool> manager-blocked: root.operation-pending || root.export-warning-visible || root.import-conflict-name != "" || root.delete-confirmation-visible;
+    in-out property <string> operation-state: "idle";
+    in-out property <string> status-text: "Choose a saved connection or add one.";
+    in-out property <string> error-title;
+    in-out property <string> error-summary;
+    in-out property <string> error-diagnostic;
+    in-out property <string> storage-notice;
+    in-out property <bool> portable-files-available: false;
+    in-out property <bool> delete-confirmation-visible: false;
+    in-out property <string> delete-profile-id;
+    in-out property <string> delete-profile-name;
+    in-out property <bool> export-warning-visible: false;
+    in-out property <string> import-conflict-name;
+    in-out property <string> import-rename;
+    in-out property <string> connection-name;
+    in-out property <string> bootstrap-servers: "localhost:9092";
+    in-out property <string> security-mode: "PLAINTEXT";
+    in-out property <string> sasl-transport: "SASL_PLAINTEXT";
+    in-out property <string> sasl-mechanism: "SCRAM-SHA-512";
+    in-out property <string> username;
+    in-out property <string> password;
+    in-out property <string> ca-path;
+    in-out property <string> certificate-path;
+    in-out property <string> key-path;
+    in-out property <string> key-password;
+    in-out property <string> name-error;
+    in-out property <string> servers-error;
+    in-out property <string> ca-error;
+    in-out property <string> certificate-error;
+    in-out property <string> key-error;
+    in-out property <string> username-error;
+    in-out property <string> password-error;
+
+    in-out property <string> explorer-session-id;
+    in-out property <[TopicRow]> topics;
+    in-out property <string> topic-filter;
+    in-out property <int> topic-total-count;
+    in-out property <int> topic-filtered-count;
+    in-out property <string> selected-topic;
+    in-out property <bool> topic-unavailable;
+    in-out property <bool> topics-refreshing;
+    in-out property <string> topics-elapsed;
+    in-out property <string> topics-error;
+    in-out property <bool> metadata-pending;
+    in-out property <string> metadata-elapsed;
+    in-out property <string> detail-error;
+    in-out property <bool> detail-ready;
+    in-out property <int> topic-partition-count;
+    in-out property <[PartitionRow]> partitions;
+    in-out property <[string]> info-partition-choices;
+    in-out property <int> info-partition-index: -1;
+    in-out property <[ConfigurationRow]> configuration;
+    in-out property <bool> configuration-available;
+    in-out property <string> configuration-error;
+
+    in-out property <[string]> search-partition-choices;
+    in-out property <string> search-partition: "All partitions";
+    in-out property <string> search-page-size: "20";
+    in-out property <string> search-key-contains;
+    in-out property <string> search-value-contains;
+    in-out property <bool> search-case-sensitive;
+    in-out property <string> search-timestamp-from;
+    in-out property <string> search-timestamp-to;
+    in-out property <string> search-order: "Latest first";
+    in-out property <string> search-timestamp-presence: "All";
+    in-out property <string> search-partition-error;
+    in-out property <string> search-page-size-error;
+    in-out property <string> search-timestamp-from-error;
+    in-out property <string> search-timestamp-to-error;
+    in-out property <bool> search-pending;
+    in-out property <string> search-elapsed;
+    in-out property <string> search-error;
+    in-out property <bool> search-has-results;
+    in-out property <int> search-result-count;
+    in-out property <string> search-warnings;
+    in-out property <string> search-failures;
+    in-out property <[MessageRow]> messages;
+    in-out property <bool> message-timestamps-as-iso: false;
+    in-out property <int> page-number;
+    in-out property <int> page-count;
+    in-out property <bool> previous-page-enabled;
+    in-out property <bool> next-page-enabled;
+    in-out property <int> selected-message-row: -1;
+    in-out property <bool> record-selected;
+    in-out property <string> record-partition;
+    in-out property <string> record-offset;
+    in-out property <string> record-timestamp;
+    in-out property <string> record-key;
+    in-out property <string> record-value;
+    in-out property <string> record-key-line-numbers;
+    in-out property <string> record-value-line-numbers;
+    in-out property <[HeaderRow]> record-headers;
+    in-out property <int> record-header-count;
+
+    in-out property <bool> send-dialog-open;
+    in-out property <string> send-topic;
+    in-out property <[string]> send-partition-choices;
+    in-out property <string> send-partition: "Automatic";
+    in-out property <string> send-key;
+    in-out property <string> send-value;
+    in-out property <string> send-key-line-numbers;
+    in-out property <string> send-value-line-numbers;
+    in-out property <string> send-partition-error;
+    in-out property <string> send-value-error;
+    in-out property <bool> delivery-pending;
+    in-out property <string> delivery-elapsed;
+    in-out property <string> delivery-notice;
+    in-out property <bool> delivery-success;
+
+    property <string> hovered-topic;
+    property <bool> hovered-topic-wide: false;
+    property <string> topic-tab: "messages";
+    property <string> record-tab: "value";
+    property <bool> search-advanced-filters-open: false;
+
+    callback profile-selected(string);
+    callback profile-connect-requested(string);
+    callback delete-requested(string);
+    callback delete-confirmed();
+    callback delete-cancelled();
+    callback add-requested();
+    callback save-requested();
+    callback test-requested();
+    callback connect-requested();
+    callback import-requested();
+    callback export-requested();
+    callback export-confirmed();
+    callback import-renamed(string);
+    callback import-replaced();
+    callback import-cancelled();
+    callback connections-requested();
+    callback refresh-requested();
+    callback topic-filter-changed(string);
+    callback topic-selected(string);
+    callback search-form-changed();
+    callback search-requested();
+    callback search-cancelled();
+    callback page-requested(int);
+    callback message-selected(int);
+    callback message-timestamp-format-toggled();
+    callback record-value-json-beauty-requested();
+    callback send-dialog-requested();
+    callback send-form-changed();
+    callback send-value-json-beauty-requested();
+    callback send-requested();
+    callback send-dialog-closed();
+    callback delivery-notice-dismissed();
+
+    if root.route == "manager" : HorizontalLayout {
+        spacing: 0px;
+        Rectangle {
+            width: 280px;
+            background: #eaf7ff;
+            VerticalLayout {
+                padding: 18px;
+                spacing: 12px;
+                HorizontalLayout {
+                    Text { text: "CONNECTIONS"; color: #1e425b; font-size: 13px; font-weight: 700; letter-spacing: 1px; horizontal-stretch: 1; }
+                    Text { text: root.saved-profiles.length + " SAVED"; color: #52748a; font-size: 10px; vertical-alignment: center; }
+                }
+                Text { text: "SAVED CONNECTIONS"; color: #648096; font-size: 10px; letter-spacing: 1px; }
+                Button { text: "Add connection"; enabled: !root.manager-blocked; clicked => { root.add-requested(); } }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Button {
+                        text: "Import";
+                        enabled: root.portable-files-available && !root.manager-blocked;
+                        clicked => { root.import-requested(); }
+                    }
+                    Button {
+                        text: "Export";
+                        enabled: root.portable-files-available && !root.manager-blocked && root.saved-profiles.length > 0;
+                        clicked => { root.export-requested(); }
+                    }
+                }
+                if !root.portable-files-available : Text {
+                    text: "Portable files require Windows.";
+                    color: #6b8598;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                }
+                ScrollView {
+                    vertical-stretch: 1;
+                    content-width: self.visible-width;
+                    VerticalLayout {
+                        spacing: 8px;
+                        for profile in root.saved-profiles : Rectangle {
+                            height: 136px;
+                            background: profile.id == root.selected-profile-id ? #cfe8fa : #fafdff;
+                            border-radius: 8px;
+                            profile-touch := TouchArea {
+                                enabled: !root.manager-blocked;
+                                clicked => { selection-delay.running = true; }
+                                double-clicked => {
+                                    selection-delay.running = false;
+                                    root.profile-connect-requested(profile.id);
+                                }
+                            }
+                            selection-delay := Timer {
+                                interval: 250ms;
+                                running: false;
+                                triggered => {
+                                    self.running = false;
+                                    root.profile-selected(profile.id);
+                                }
+                            }
+                            VerticalLayout {
+                                padding: 10px;
+                                spacing: 4px;
+                                HorizontalLayout {
+                                    Text { text: profile.name; color: #1e425b; font-weight: 700; overflow: elide; horizontal-stretch: 1; }
+                                    DangerButton { text: "Delete"; enabled: !root.manager-blocked; clicked => { root.delete-requested(profile.id); } }
+                                }
+                                Text { text: profile.servers; color: #648096; font-size: 12px; overflow: elide; }
+                                Text { text: profile.security; color: #648096; font-size: 11px; overflow: elide; }
+                                Button { text: "Connect"; enabled: !root.manager-blocked; primary: true; clicked => { root.profile-connect-requested(profile.id); } }
+                            }
+                        }
+                        if root.saved-profiles.length == 0 : Text {
+                            text: "No saved connections yet. Save a profile to keep it here.";
+                            wrap: word-wrap;
+                            color: #6b8598;
+                        }
+                    }
+                }
+                Text { text: "Saved profiles are encrypted for this Windows user."; wrap: word-wrap; font-size: 12px; color: #6b8598; }
+            }
+        }
+        Rectangle { width: 1px; background: #c9dce7; }
+        Rectangle {
+            horizontal-stretch: 1;
+            background: #fafdff;
+            VerticalLayout {
+                padding: 24px;
+                spacing: 12px;
+                Text { text: root.editing-saved-profile ? "Edit connection" : "Add connection"; font-size: 25px; font-weight: 700; color: #1e425b; }
+                Text { text: "Test checks access here. Connect opens the workspace."; color: #6c8495; wrap: word-wrap; }
+                Rectangle {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        spacing: 8px;
+                        padding-right: 12px;
+                        FormField { label: "Connection name"; value <=> root.connection-name; error: root.name-error; enabled: !root.manager-blocked; }
+                        FormField { label: "Bootstrap servers (host:port,host:port)"; value <=> root.bootstrap-servers; error: root.servers-error; enabled: !root.manager-blocked; }
+                        VerticalLayout {
+                            height: 64px;
+                            vertical-stretch: 0;
+                            spacing: 4px;
+                            Text { height: 18px; text: "Security"; color: #36566c; }
+                            ComboBox { height: 36px; model: ["PLAINTEXT", "SSL", "SASL"]; current-value <=> root.security-mode; enabled: !root.manager-blocked; }
+                        }
+                        if root.security-mode == "SASL" : VerticalLayout {
+                            vertical-stretch: 0;
+                            spacing: 8px;
+                            HorizontalLayout {
+                                height: 64px;
+                                spacing: 12px;
+                                VerticalLayout {
+                                    spacing: 4px;
+                                    Text { height: 18px; text: "SASL transport"; color: #36566c; }
+                                    ComboBox { height: 36px; model: ["SASL_PLAINTEXT", "SASL_SSL"]; current-value <=> root.sasl-transport; enabled: !root.manager-blocked; }
+                                }
+                                VerticalLayout {
+                                    spacing: 4px;
+                                    Text { height: 18px; text: "Mechanism"; color: #36566c; }
+                                    ComboBox { height: 36px; model: ["PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512"]; current-value <=> root.sasl-mechanism; enabled: !root.manager-blocked; }
+                                }
+                            }
+                            HorizontalLayout {
+                                height: 84px;
+                                spacing: 12px;
+                                FormField { label: "Username"; value <=> root.username; error: root.username-error; enabled: !root.manager-blocked; }
+                                FormField { label: "Password"; value <=> root.password; secret: true; error: root.password-error; enabled: !root.manager-blocked; }
+                            }
+                        }
+                        if root.security-mode == "SSL" || (root.security-mode == "SASL" && root.sasl-transport == "SASL_SSL") : VerticalLayout {
+                            vertical-stretch: 0;
+                            spacing: 8px;
+                            Text { text: "TLS certificates (local file paths)"; color: #36566c; font-weight: 700; }
+                            FormField { label: "CA certificate (required)"; value <=> root.ca-path; error: root.ca-error; enabled: !root.manager-blocked; }
+                            HorizontalLayout {
+                                height: 84px;
+                                spacing: 12px;
+                                FormField { label: "Client certificate (optional)"; value <=> root.certificate-path; error: root.certificate-error; enabled: !root.manager-blocked; }
+                                FormField { label: "Private key (optional)"; value <=> root.key-path; error: root.key-error; enabled: !root.manager-blocked; }
+                            }
+                            FormField { label: "Private key password (optional)"; value <=> root.key-password; secret: true; enabled: !root.manager-blocked; }
+                        }
+                        Rectangle { min-height: 12px; vertical-stretch: 1; }
+                    }
+                }
+                if root.error-diagnostic != "" : Rectangle {
+                    height: 68px;
+                    background: #fff0f0;
+                    border-color: #e4b8bd;
+                    border-width: 1px;
+                    border-radius: 8px;
+                    VerticalLayout {
+                        padding: 10px;
+                        HorizontalLayout {
+                            Text { text: root.error-title; color: #922d37; font-weight: 700; vertical-alignment: center; horizontal-stretch: 1; }
+                            Button { text: "Copy diagnostic"; clicked => { diagnostic.select-all(); diagnostic.copy(); } }
+                        }
+                        Text { text: root.error-summary; color: #a92d37; font-size: 12px; wrap: word-wrap; }
+                        diagnostic := TextEdit { visible: false; text: root.error-diagnostic; read-only: true; }
+                    }
+                }
+                if root.storage-notice != "" : Text { text: root.storage-notice; color: #922d37; wrap: word-wrap; }
+                Text { text: root.status-text; color: #6c8495; wrap: word-wrap; }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Rectangle { horizontal-stretch: 1; }
+                    Button { text: root.operation-state == "testing" ? "Testing..." : "Test"; enabled: !root.manager-blocked; clicked => { root.test-requested(); } }
+                    Button { text: root.operation-state == "connecting" ? "Connecting..." : "Connect"; enabled: !root.manager-blocked; primary: true; clicked => { root.connect-requested(); } }
+                }
+            }
+        }
+    }
+
+    if root.route == "workspace" : HorizontalLayout {
+        spacing: 0px;
+        Rectangle {
+            width: 228px;
+            background: #eaf7ff;
+            clip: true;
+            VerticalLayout {
+                spacing: 0px;
+                VerticalLayout {
+                    padding: 14px;
+                    spacing: 12px;
+                Rectangle {
+                    height: 36px;
+                    background: connections-touch.has-hover ? #0f4c94 : #173f78;
+                    border-color: #173f78;
+                    border-width: 1px;
+                    border-radius: 6px;
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        spacing: 7px;
+                        Rectangle {
+                            width: 16px;
+                            Image { source: @image-url("../assets/icons/arrow-left-white.svg"); width: 16px; height: 16px; x: 0px; y: (parent.height - self.height) / 2; }
+                        }
+                        Text { text: "Connections"; color: #ffffff; font-size: 12px; font-weight: 600; vertical-alignment: center; }
+                    }
+                    connections-touch := TouchArea {
+                        enabled: !root.manager-blocked && !root.send-dialog-open;
+                        clicked => { root.connections-requested(); }
+                    }
+                }
+                Rectangle {
+                    height: 66px;
+                    background: #ffffff;
+                    border-radius: 8px;
+                    border-color: #c9dce7;
+                    border-width: 1px;
+                    VerticalLayout {
+                        padding: 10px;
+                        spacing: 5px;
+                        Text { text: "ACTIVE CONNECTION"; font-size: 10px; color: #52748a; letter-spacing: 1px; }
+                        HorizontalLayout {
+                            spacing: 7px;
+                            Text { text: "o"; color: #12b981; font-size: 18px; vertical-alignment: center; }
+                            Text { text: root.active-profile-name; font-size: 15px; font-weight: 700; color: #173f78; min-width: 0px; horizontal-stretch: 1; overflow: elide; vertical-alignment: center; }
+                            Rectangle {
+                                width: 15px;
+                                Image { source: @image-url("../assets/icons/plug.svg"); width: 15px; height: 15px; x: 0px; y: (parent.height - self.height) / 2; }
+                            }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    Text {
+                        text: "TOPICS";
+                        color: #1e425b;
+                        font-size: 12px;
+                        font-weight: 700;
+                        letter-spacing: 1px;
+                        horizontal-stretch: 1;
+                        vertical-alignment: center;
+                    }
+                    Rectangle {
+                        width: 72px;
+                        height: 28px;
+                        background: refresh-touch.has-hover ? #f3f8fd : #ffffff;
+                        border-color: #c9dce7;
+                        border-width: 1px;
+                        border-radius: 6px;
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            spacing: 4px;
+                            Rectangle {
+                                width: 13px;
+                                Image { source: @image-url("../assets/icons/refresh.svg"); width: 13px; height: 13px; x: 0px; y: (parent.height - self.height) / 2; }
+                            }
+                            Text { text: root.topics-refreshing ? "Loading" : "Refresh"; color: #173f78; font-size: 11px; vertical-alignment: center; }
+                        }
+                        refresh-touch := TouchArea {
+                            enabled: !root.topics-refreshing && !root.send-dialog-open;
+                            clicked => { root.refresh-requested(); }
+                        }
+                    }
+                }
+                if root.topics-refreshing : Text {
+                    text: root.topics-elapsed;
+                    color: #64766a;
+                    font-size: 12px;
+                    min-width: 0px;
+                    wrap: word-wrap;
+                }
+                VerticalLayout {
+                    spacing: 8px;
+                    min-width: 0px;
+                    vertical-stretch: 1;
+                    HorizontalLayout {
+                        height: 34px;
+                        spacing: 6px;
+                        Rectangle {
+                            width: 15px;
+                            Image { source: @image-url("../assets/icons/search.svg"); width: 15px; height: 15px; x: 0px; y: (parent.height - self.height) / 2; }
+                        }
+                        LineEdit {
+                            min-width: 0px;
+                            horizontal-stretch: 1;
+                            placeholder-text: "Filter topic names";
+                            accessible-label: "Filter topic names";
+                            text <=> root.topic-filter;
+                            enabled: !root.send-dialog-open;
+                            edited(text) => { root.topic-filter = text; root.topic-filter-changed(text); }
+                        }
+                    }
+                    Rectangle { height: 38px; }
+                    Text {
+                        text: root.topic-filter == "" ? root.topic-total-count + " cached topics" : root.topic-filtered-count + " of " + root.topic-total-count + " topics";
+                        font-size: 11px;
+                        color: #64766a;
+                        min-width: 0px;
+                        wrap: word-wrap;
+                    }
+                    if root.topics-error != "" : ScrollView {
+                        height: 96px;
+                        min-width: 0px;
+                        content-width: self.visible-width;
+                        horizontal-scrollbar-policy: always-off;
+                        ExplorerNotice {
+                            text: root.topics-error + "\nUse Refresh to retry.";
+                            error: true;
+                        }
+                    }
+                    if root.topics.length == 0 && !root.topics-refreshing && root.topics-error == "" : Text {
+                        text: root.topic-filter == "" ? "No topics are available." : "No topics match this filter.";
+                        color: #64766a;
+                        font-size: 12px;
+                        min-width: 0px;
+                        wrap: word-wrap;
+                    }
+                    ListView {
+                        min-width: 0px;
+                        vertical-stretch: 1;
+                        content-width: self.visible-width;
+                        horizontal-scrollbar-policy: always-off;
+                        for topic in root.topics : Rectangle {
+                            height: 64px;
+                            background: transparent;
+                            Rectangle {
+                                height: 58px;
+                                background: topic.name == root.selected-topic ? #e8f1ff : topic-touch.has-hover ? #f6fbff : #ffffff;
+                                border-radius: 6px;
+                                border-color: topic.name == root.selected-topic ? #2563eb : #dbe7f2;
+                                border-width: topic.name == root.selected-topic ? 1px : 0px;
+                                HorizontalLayout {
+                                    padding-left: 8px;
+                                    padding-right: 7px;
+                                    spacing: 7px;
+                                    Rectangle {
+                                        width: 15px;
+                                        Image { source: @image-url("../assets/icons/topic.svg"); width: 15px; height: 15px; x: 0px; y: (parent.height - self.height) / 2; }
+                                    }
+                                    VerticalLayout {
+                                        padding-top: 8px;
+                                        padding-bottom: 8px;
+                                        spacing: 4px;
+                                        horizontal-stretch: 1;
+                                        Text { text: topic.name; color: topic.name == root.selected-topic ? #2563eb : #173f78; font-weight: 600; font-size: 12px; min-width: 0px; overflow: elide; }
+                                        Text { text: topic.partition-count + " partitions"; color: #52748a; font-size: 11px; }
+                                    }
+                                    if topic.name == root.selected-topic : Rectangle {
+                                        width: 14px;
+                                        Image { source: @image-url("../assets/icons/chevron-right.svg"); width: 14px; height: 14px; x: 0px; y: (parent.height - self.height) / 2; }
+                                    }
+                                }
+                            }
+                            topic-touch := TouchArea {
+                                enabled: !root.send-dialog-open;
+                                changed has-hover => {
+                                    if self.has-hover {
+                                        root.hovered-topic = topic.name;
+                                        root.hovered-topic-wide = topic.preview-wide;
+                                    } else if root.hovered-topic == topic.name {
+                                        root.hovered-topic = "";
+                                        root.hovered-topic-wide = false;
+                                    }
+                                }
+                                clicked => {
+                                    root.record-tab = "value";
+                                    root.topic-selected(topic.name);
+                                }
+                            }
+                        }
+                    }
+                }
+                }
+            }
+        }
+        Rectangle { width: 1px; background: #c9dce7; }
+        Rectangle {
+            min-width: 0px;
+            horizontal-stretch: 1;
+            background: #fafdff;
+            clip: true;
+            VerticalLayout {
+                padding: 20px;
+                spacing: 12px;
+                min-width: 0px;
+                HorizontalLayout {
+                    spacing: 12px;
+                    min-width: 0px;
+                    VerticalLayout {
+                        spacing: 4px;
+                        min-width: 0px;
+                        horizontal-stretch: 1;
+                        Text {
+                            text: root.selected-topic == "" ? "Topics" : root.selected-topic;
+                            font-size: 24px;
+                            font-weight: 700;
+                            color: #183527;
+                            min-width: 0px;
+                            overflow: elide;
+                        }
+                    }
+                    AccentIconButton {
+                        text: "Send message";
+                        icon: @image-url("../assets/icons/send.svg");
+                        enabled: root.detail-ready && !root.send-dialog-open;
+                        clicked => { root.send-dialog-requested(); }
+                    }
+                }
+                if root.topic-unavailable : VerticalLayout {
+                    spacing: 10px;
+                    min-width: 0px;
+                    Rectangle { vertical-stretch: 1; }
+                    Text { text: "Topic no longer exists"; color: #183527; font-size: 22px; font-weight: 700; min-width: 0px; wrap: word-wrap; }
+                    Text { text: "Select another topic from the sidebar to continue."; color: #64766a; min-width: 0px; wrap: word-wrap; }
+                    Rectangle { vertical-stretch: 1; }
+                }
+                if !root.topic-unavailable && root.selected-topic == "" : VerticalLayout {
+                    spacing: 10px;
+                    min-width: 0px;
+                    Rectangle { vertical-stretch: 1; }
+                    Text { text: "Choose a topic"; color: #183527; font-size: 22px; font-weight: 700; }
+                    Text { text: "Select a topic to inspect its partitions, search messages, or send a text record."; color: #64766a; min-width: 0px; wrap: word-wrap; }
+                    Text { text: root.topics-refreshing ? "Loading topics... " + root.topics-elapsed : "The topic list is cached for this connection. Refresh to get the latest list."; color: #64766a; font-size: 12px; min-width: 0px; wrap: word-wrap; }
+                    Rectangle { vertical-stretch: 1; }
+                }
+                if !root.topic-unavailable && root.selected-topic != "" : VerticalLayout {
+                    spacing: 12px;
+                    min-width: 0px;
+                    if root.metadata-pending : Text {
+                        text: "Loading topic metadata... " + root.metadata-elapsed;
+                        color: #64766a;
+                        font-size: 12px;
+                        min-width: 0px;
+                        wrap: word-wrap;
+                    }
+                    if root.detail-error != "" : HorizontalLayout {
+                        spacing: 10px;
+                        min-width: 0px;
+                        ScrollView {
+                            height: 72px;
+                            min-width: 0px;
+                            content-width: self.visible-width;
+                            horizontal-scrollbar-policy: always-off;
+                            ExplorerNotice { text: root.detail-error; error: true; }
+                        }
+                        Button {
+                            text: "Retry metadata";
+                            enabled: !root.metadata-pending && !root.send-dialog-open;
+                            clicked => { root.topic-selected(root.selected-topic); }
+                        }
+                    }
+                    Rectangle {
+                        height: 36px;
+                        min-width: 0px;
+                        Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: #c7ddeb; }
+                        ExplorerTab { x: 0px; width: 132px; text: "Messages"; icon: @image-url("../assets/icons/mail.svg"); active: root.topic-tab == "messages"; enabled: !root.send-dialog-open; clicked => { root.topic-tab = "messages"; } }
+                        ExplorerTab { x: 122px; width: 105px; text: "Info"; icon: @image-url("../assets/icons/info.svg"); active: root.topic-tab == "info"; enabled: !root.send-dialog-open; clicked => { root.topic-tab = "info"; } }
+                        ExplorerTab { x: 217px; width: 140px; text: "Consumers"; icon: @image-url("../assets/icons/users.svg"); active: root.topic-tab == "consumers"; enabled: !root.send-dialog-open; clicked => { root.topic-tab = "consumers"; } }
+                    }
+                    if root.topic-tab == "info" : ScrollView {
+                        min-width: 0px;
+                        vertical-stretch: 1;
+                        content-width: self.visible-width;
+                        horizontal-scrollbar-policy: always-off;
+                        VerticalLayout {
+                            padding-right: 14px;
+                            spacing: 14px;
+                            alignment: start;
+                            min-width: 0px;
+                            Text { text: "TOPIC INFORMATION"; color: #1e425b; font-size: 12px; font-weight: 700; letter-spacing: 1px; }
+                            SelectableInfoRow { label: "Topic"; value: root.selected-topic; }
+                            SelectableInfoRow { label: "Partitions"; value: root.topic-partition-count + " partitions"; }
+                            if !root.detail-ready && !root.metadata-pending : Text {
+                                text: "Partition metadata is unavailable. Select this topic again to retry.";
+                                color: #64766a;
+                                min-width: 0px;
+                                wrap: word-wrap;
+                            }
+                            Text { text: "PARTITIONS"; color: #1e425b; font-size: 12px; font-weight: 700; letter-spacing: 1px; }
+                            if root.info-partition-choices.length > 0 : HorizontalLayout {
+                                height: 32px;
+                                vertical-stretch: 0;
+                                spacing: 8px;
+                                Text {
+                                    width: 142px;
+                                    text: "Partition:";
+                                    color: #52748a;
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    vertical-alignment: center;
+                                }
+                                ComboBox {
+                                    min-width: 0px;
+                                    horizontal-stretch: 1;
+                                    model: root.info-partition-choices;
+                                    current-index <=> root.info-partition-index;
+                                    accessible-label: "Partition";
+                                }
+                            }
+                            if root.info-partition-index >= 0 && root.info-partition-index < root.partitions.length : Rectangle {
+                                min-width: 0px;
+                                vertical-stretch: 0;
+                                background: #f1f6f8;
+                                border-radius: 6px;
+                                VerticalLayout {
+                                    padding: 12px;
+                                    spacing: 6px;
+                                    min-width: 0px;
+                                    SelectableInfoRow { label: "Leader"; value: root.partitions[root.info-partition-index].leader; }
+                                    SelectableInfoRow { label: "Replicas"; value: root.partitions[root.info-partition-index].replicas; }
+                                    SelectableInfoRow { label: "In-sync replicas (ISR)"; value: root.partitions[root.info-partition-index].isr; }
+                                    SelectableInfoRow { label: "Low offset"; value: root.partitions[root.info-partition-index].low-offset; }
+                                    SelectableInfoRow { label: "High offset"; value: root.partitions[root.info-partition-index].high-offset; }
+                                }
+                            }
+                            Text { text: "CONFIGURATION"; color: #1e425b; font-size: 12px; font-weight: 700; letter-spacing: 1px; }
+                            if root.configuration-error != "" : ExplorerNotice { text: "Configuration unavailable\n" + root.configuration-error; }
+                            if !root.configuration-available && root.configuration-error == "" : Text {
+                                text: root.metadata-pending ? "Loading configuration..." : "Configuration is unavailable for this topic.";
+                                color: #64766a;
+                                font-size: 12px;
+                                min-width: 0px;
+                                wrap: word-wrap;
+                            }
+                            if root.configuration-available && root.configuration.length == 0 : Text { text: "No configuration entries returned."; color: #64766a; font-size: 12px; }
+                            for entry in root.configuration : Rectangle {
+                                min-width: 0px;
+                                vertical-stretch: 0;
+                                background: #f1f6f8;
+                                border-radius: 4px;
+                                SelectableInfoRow { padding: 8px; label: entry.name; value: entry.value; }
+                            }
+                        }
+                    }
+                    if root.topic-tab == "messages" : ScrollView {
+                        min-width: 0px;
+                        vertical-stretch: 1;
+                        content-width: self.visible-width;
+                        horizontal-scrollbar-policy: always-off;
+                        VerticalLayout {
+                            padding-right: 14px;
+                            padding-bottom: 12px;
+                            spacing: 12px;
+                            alignment: start;
+                            min-width: 0px;
+                            Rectangle {
+                                min-width: 0px;
+                                vertical-stretch: 0;
+                                background: #f8fafc;
+                                border-color: #e2e8f0;
+                                border-width: 1px;
+                                border-radius: 12px;
+                                VerticalLayout {
+                                    padding: 12px;
+                                    spacing: 8px;
+                                    min-width: 0px;
+                                    HorizontalLayout {
+                                        spacing: 12px;
+                                        min-width: 0px;
+                                        MessageSelect {
+                                            width: (parent.width - 24px) / 3;
+                                            label: "PARTITION";
+                                            choices: root.search-partition-choices;
+                                            value <=> root.search-partition;
+                                            error: root.search-partition-error;
+                                            enabled: root.detail-ready && !root.send-dialog-open;
+                                            selected => { root.search-form-changed(); }
+                                        }
+                                        MessageField {
+                                            width: (parent.width - 24px) / 3;
+                                            label: "RECORDS / PARTITION";
+                                            value <=> root.search-page-size;
+                                            error: root.search-page-size-error;
+                                            enabled: !root.send-dialog-open;
+                                            edited => { root.search-form-changed(); }
+                                        }
+                                        MessageSelect { width: (parent.width - 24px) / 3; label: "TIMESTAMP ORDER"; choices: ["Latest first", "Earliest first"]; value <=> root.search-order; enabled: !root.send-dialog-open; selected => { root.search-form-changed(); } }
+                                    }
+                                    HorizontalLayout {
+                                        spacing: 12px;
+                                        min-width: 0px;
+                                        MessageField { width: (parent.width - 12px) / 2; label: "KEY CONTAINS"; placeholder: "Optional"; value <=> root.search-key-contains; enabled: !root.send-dialog-open; edited => { root.search-form-changed(); } }
+                                        MessageField { width: (parent.width - 12px) / 2; label: "VALUE CONTAINS"; placeholder: "Optional"; value <=> root.search-value-contains; enabled: !root.send-dialog-open; edited => { root.search-form-changed(); } }
+                                    }
+                                    if root.search-advanced-filters-open : VerticalLayout {
+                                        spacing: 8px;
+                                        min-width: 0px;
+                                        HorizontalLayout {
+                                            spacing: 12px;
+                                            min-width: 0px;
+                                            MessageSelect { width: (parent.width - 12px) / 2; label: "TIMESTAMP RECORDS"; choices: ["All", "Has timestamp", "No timestamp"]; value <=> root.search-timestamp-presence; enabled: !root.send-dialog-open; selected => { root.search-form-changed(); } }
+                                            VerticalLayout {
+                                                width: (parent.width - 12px) / 2;
+                                                spacing: 4px;
+                                                Text { height: 12px; text: "MATCHING"; color: #334155; font-size: 10px; font-weight: 700; letter-spacing: 1px; }
+                                                CheckBox { text: "Case sensitive"; checked <=> root.search-case-sensitive; enabled: !root.send-dialog-open; toggled => { root.search-form-changed(); } }
+                                            }
+                                        }
+                                        HorizontalLayout {
+                                            spacing: 12px;
+                                            min-width: 0px;
+                                            MessageField { width: (parent.width - 12px) / 2; label: "TIMESTAMP FROM (INCLUSIVE)"; placeholder: "ISO 8601 or Unix ms"; value <=> root.search-timestamp-from; error: root.search-timestamp-from-error; enabled: !root.send-dialog-open; edited => { root.search-form-changed(); } }
+                                            MessageField { width: (parent.width - 12px) / 2; label: "TIMESTAMP TO (INCLUSIVE)"; placeholder: "ISO 8601 or Unix ms"; value <=> root.search-timestamp-to; error: root.search-timestamp-to-error; enabled: !root.send-dialog-open; edited => { root.search-form-changed(); } }
+                                        }
+                                    }
+                                    HorizontalLayout {
+                                        spacing: 10px;
+                                        min-width: 0px;
+                                        Button {
+                                            width: 112px;
+                                            height: 32px;
+                                            text: root.search-advanced-filters-open ? "Fewer filters" : "More filters";
+                                            enabled: !root.send-dialog-open;
+                                            clicked => { root.search-advanced-filters-open = !root.search-advanced-filters-open; }
+                                        }
+                                        Rectangle { horizontal-stretch: 1; }
+                                        if root.search-pending : Text { text: root.search-elapsed; font-size: 12px; color: #64748b; vertical-alignment: center; }
+                                        AccentIconButton { width: 112px; text: root.search-pending ? "Searching..." : "Search"; icon: @image-url("../assets/icons/search-white.svg"); enabled: root.detail-ready && !root.search-pending && !root.send-dialog-open; clicked => { root.search-requested(); } }
+                                        DangerButton { height: 38px; text: "Cancel"; enabled: root.search-pending && !root.send-dialog-open; clicked => { root.search-cancelled(); } }
+                                    }
+                                    Text {
+                                        text: "Scans up to 10,000 records per partition; page size only controls local results.";
+                                        color: #64748b;
+                                        font-size: 11px;
+                                        min-width: 0px;
+                                        wrap: word-wrap;
+                                    }
+                                }
+                            }
+                            if !root.detail-ready : Text { text: "Search and send require loaded partition metadata."; color: #64766a; font-size: 12px; min-width: 0px; wrap: word-wrap; }
+                            if root.search-error != "" : ExplorerNotice { text: root.search-error; error: true; }
+                            if root.search-warnings != "" : ExplorerNotice { text: root.search-warnings; }
+                            if root.search-failures != "" : ExplorerNotice { text: "Partition failures\n" + root.search-failures; error: true; }
+                            if !root.search-has-results && !root.search-pending && root.search-error == "" : Text {
+                                text: "Set your filters, then Search to load a snapshot of messages.";
+                                color: #64766a;
+                                font-size: 12px;
+                                min-width: 0px;
+                                wrap: word-wrap;
+                            }
+                            if root.search-has-results && root.search-result-count == 0 : Text {
+                                text: "No messages match these filters in the scanned window.";
+                                color: #64766a;
+                                min-width: 0px;
+                                wrap: word-wrap;
+                            }
+                            if root.search-has-results && root.search-result-count > 0 : VerticalLayout {
+                                spacing: 10px;
+                                min-width: 0px;
+                                HorizontalLayout {
+                                    min-width: 0px;
+                                    Text { text: root.search-result-count + " matching messages"; color: #075985; font-size: 13px; font-weight: 700; horizontal-stretch: 1; }
+                                    Text { text: "Page " + root.page-number + " of " + root.page-count; color: #64748b; font-size: 11px; }
+                                    Button { width: 68px; height: 28px; text: "Previous"; enabled: root.previous-page-enabled && !root.send-dialog-open; clicked => { root.page-requested(-1); } }
+                                    Button { width: 52px; height: 28px; text: "Next"; enabled: root.next-page-enabled && !root.send-dialog-open; clicked => { root.page-requested(1); } }
+                                }
+                                VerticalLayout {
+                                    height: 400px;
+                                    spacing: 0px;
+                                    min-width: 0px;
+                                    Rectangle {
+                                        height: 40px;
+                                        background: #f1f5f9;
+                                        HorizontalLayout {
+                                            padding-left: 8px;
+                                            padding-right: 8px;
+                                            spacing: 12px;
+                                            Text { width: 62px; text: "Partition"; font-size: 11px; color: #36566c; font-weight: 700; vertical-alignment: center; }
+                                            Text { width: 82px; text: "Offset"; font-size: 11px; color: #36566c; font-weight: 700; vertical-alignment: center; }
+                                            Text { width: 146px; text: "Timestamp"; font-size: 11px; color: #36566c; font-weight: 700; vertical-alignment: center; }
+                                            Rectangle {
+                                                width: 22px;
+                                                height: 22px;
+                                                border-radius: 4px;
+                                                background: timestamp-toggle.has-hover ? #dbeafe : #e2e8f0;
+                                                Image { x: 5px; y: 5px; width: 12px; height: 12px; source: @image-url("../assets/icons/refresh.svg"); }
+                                                timestamp-toggle := TouchArea { clicked => { root.message-timestamp-format-toggled(); } }
+                                            }
+                                            Text { width: 170px; text: "Key"; font-size: 11px; color: #36566c; font-weight: 700; vertical-alignment: center; }
+                                            Text { text: "Value"; font-size: 11px; color: #36566c; font-weight: 700; vertical-alignment: center; horizontal-stretch: 1; }
+                                        }
+                                    }
+                                    ScrollView {
+                                        min-width: 0px;
+                                        vertical-stretch: 1;
+                                        content-width: self.visible-width;
+                                        horizontal-scrollbar-policy: always-off;
+                                        VerticalLayout {
+                                            spacing: 0px;
+                                            alignment: start;
+                                        for message[row-index] in root.messages : Rectangle {
+                                            height: 36px;
+                                            vertical-stretch: 0;
+                                            background: row-index == root.selected-message-row ? #fef3c7 : message-touch.has-hover ? #f0f9ff : Math.mod(row-index, 2) == 0 ? #f8fafc : #eff6ff;
+                                            // Fixed cell coordinates keep every repeated Value text inside its own row.
+                                            Text { x: 8px; width: 62px; height: parent.height; text: message.partition; color: #36566c; font-size: 11px; vertical-alignment: center; overflow: elide; }
+                                            Text { x: 82px; width: 82px; height: parent.height; text: message.offset; color: #36566c; font-size: 11px; font-family: "Consolas"; vertical-alignment: center; overflow: elide; }
+                                            Text { x: 176px; width: 180px; height: parent.height; text: message.timestamp; color: #36566c; font-size: 11px; font-family: "Consolas"; vertical-alignment: center; overflow: elide; }
+                                            Text { x: 368px; width: 170px; height: parent.height; text: message.key-preview; color: #36566c; font-size: 12px; vertical-alignment: center; wrap: no-wrap; overflow: elide; }
+                                            Text { x: 550px; width: parent.width - 558px; height: parent.height; text: message.value-preview; color: #1e425b; font-size: 12px; vertical-alignment: center; wrap: no-wrap; overflow: elide; }
+                                            message-touch := TouchArea {
+                                                enabled: !root.send-dialog-open;
+                                                clicked => { root.record-tab = "value"; root.message-selected(row-index); }
+                                            }
+                                        }
+                                        }
+                                    }
+                                }
+                                if !root.record-selected : Text { text: "Select a message to read its full value, key, and headers."; color: #64766a; font-size: 12px; min-width: 0px; wrap: word-wrap; }
+                            }
+                            if root.record-selected : Rectangle {
+                                min-width: 0px;
+                                height: 320px;
+                                background: #f8fafc;
+                                border-color: #e2e8f0;
+                                border-width: 1px;
+                                border-radius: 12px;
+                                Text { x: 12px; y: 4px; width: parent.width - 24px; height: 24px; text: "MESSAGE DETAIL"; color: #64748b; font-size: 11px; font-weight: 700; letter-spacing: 1px; vertical-alignment: center; }
+                                tab-strip := Rectangle {
+                                    x: 12px;
+                                    y: 32px;
+                                    width: 278px;
+                                    height: 32px;
+                                    Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: #c7ddeb; }
+                                    MessageDetailTab { x: 0px; width: 92px; text: "Value"; icon: @image-url("../assets/icons/code.svg"); active: root.record-tab == "value"; enabled: !root.send-dialog-open; clicked => { root.record-tab = "value"; } }
+                                    MessageDetailTab { x: 84px; width: 80px; text: "Key"; icon: @image-url("../assets/icons/key.svg"); active: root.record-tab == "key"; enabled: !root.send-dialog-open; clicked => { root.record-tab = "key"; } }
+                                    MessageDetailTab { x: 156px; width: 122px; text: "Headers (" + root.record-header-count + ")"; icon: @image-url("../assets/icons/list.svg"); active: root.record-tab == "headers"; enabled: !root.send-dialog-open; clicked => { root.record-tab = "headers"; } }
+                                }
+                                Text { x: 302px; y: 32px; width: parent.width - 422px; height: 32px; text: "Partition " + root.record-partition + "  |  Offset " + root.record-offset + "  |  Timestamp: " + root.record-timestamp; color: #0f172a; font-size: 11px; vertical-alignment: center; overflow: elide; }
+                                Button { x: parent.width - 108px; y: 34px; width: 96px; height: 28px; text: "JSON Beauty"; enabled: !root.send-dialog-open; clicked => { root.record-value-json-beauty-requested(); } }
+                                detail-content := Rectangle {
+                                    x: 12px;
+                                    y: 68px;
+                                    width: parent.width - 24px;
+                                    height: parent.height - 80px;
+                                    background: #ffffff;
+                                    border-color: #d8e3ec;
+                                    border-width: 1px;
+                                    border-radius: 7px;
+                                    if root.record-tab == "value" : Rectangle {
+                                        Rectangle { width: 42px; height: parent.height; background: #f8fafc; }
+                                        Rectangle { x: 41px; width: 1px; height: parent.height; background: #d8e3ec; }
+                                        Text { x: 4px; y: 20px; width: 32px; height: parent.height - 28px; text: root.record-value-line-numbers; color: #94a3b8; font-size: 12px; font-family: "Consolas"; horizontal-alignment: right; vertical-alignment: top; }
+                                        value-content := TextEdit { x: 52px; y: 8px; width: parent.width - 62px; height: parent.height - 16px; text: root.record-value; accessible-label: "Full message value"; read-only: true; enabled: !root.send-dialog-open; wrap: word-wrap; font-family: "Consolas"; font-size: 12px; }
+                                        CopyContentButton { x: parent.width - self.width - 6px; y: 5px; enabled: !root.send-dialog-open; clicked => { value-content.select-all(); value-content.copy(); } }
+                                    }
+                                    if root.record-tab == "key" : Rectangle {
+                                        Rectangle { width: 42px; height: parent.height; background: #f8fafc; }
+                                        Rectangle { x: 41px; width: 1px; height: parent.height; background: #d8e3ec; }
+                                        Text { x: 4px; y: 20px; width: 32px; height: parent.height - 28px; text: root.record-key-line-numbers; color: #94a3b8; font-size: 12px; font-family: "Consolas"; horizontal-alignment: right; vertical-alignment: top; }
+                                        key-content := TextEdit { x: 52px; y: 8px; width: parent.width - 62px; height: parent.height - 16px; text: root.record-key; accessible-label: "Full message key"; read-only: true; enabled: !root.send-dialog-open; wrap: word-wrap; font-family: "Consolas"; font-size: 12px; }
+                                        CopyContentButton { x: parent.width - self.width - 6px; y: 5px; enabled: !root.send-dialog-open; clicked => { key-content.select-all(); key-content.copy(); } }
+                                    }
+                                    if root.record-tab == "headers" : ScrollView {
+                                        content-width: self.visible-width;
+                                        horizontal-scrollbar-policy: always-off;
+                                        VerticalLayout {
+                                            padding: 10px;
+                                            spacing: 8px;
+                                            alignment: start;
+                                            if root.record-header-count == 0 : Text { text: "This message has no headers."; color: #64766a; font-size: 12px; }
+                                            for header in root.record-headers : VerticalLayout {
+                                                spacing: 4px;
+                                                min-width: 0px;
+                                                Text { text: header.name; color: #36566c; font-size: 12px; font-weight: 700; min-width: 0px; wrap: word-wrap; }
+                                                Rectangle {
+                                                    height: 80px;
+                                                    Rectangle { width: 42px; height: parent.height; background: #f8fafc; }
+                                                    Rectangle { x: 41px; width: 1px; height: parent.height; background: #d8e3ec; }
+                                                    Text { x: 4px; y: 20px; width: 32px; height: parent.height - 28px; text: header.line-numbers; color: #94a3b8; font-size: 12px; font-family: "Consolas"; horizontal-alignment: right; vertical-alignment: top; }
+                                                    TextEdit { x: 52px; y: 8px; width: parent.width - 62px; height: parent.height - 16px; text: header.value; accessible-label: "Header value"; read-only: true; enabled: !root.send-dialog-open; wrap: word-wrap; font-family: "Consolas"; font-size: 12px; }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if root.topic-tab == "consumers" : VerticalLayout {
+                        spacing: 8px;
+                        min-width: 0px;
+                        Rectangle { vertical-stretch: 1; }
+                        Text { text: "Coming soon"; color: #183527; font-size: 22px; font-weight: 700; }
+                        Text { text: "Consumer group exploration will be available in a future update."; color: #64766a; min-width: 0px; wrap: word-wrap; }
+                        Rectangle { vertical-stretch: 1; }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.route == "workspace" && root.hovered-topic != "" && !root.send-dialog-open : Rectangle {
+        x: 14px;
+        y: 224px;
+        width: root.hovered-topic-wide ? min(420px, parent.width - self.x - 20px) : 200px;
+        height: 36px;
+        background: #173f78;
+        border-color: #0f3261;
+        border-width: 1px;
+        border-radius: 7px;
+        drop-shadow-blur: 8px;
+        drop-shadow-color: #173f7844;
+        Text {
+            x: 12px;
+            y: 5px;
+            width: parent.width - 24px;
+            height: parent.height - 10px;
+            text: root.hovered-topic;
+            color: #ffffff;
+            font-size: 11px;
+            wrap: word-wrap;
+            vertical-alignment: center;
+        }
+    }
+
+    if root.route == "workspace" && root.send-dialog-open : Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: #18352799;
+        TouchArea {}
+        FocusScope {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: min(640px, parent.width - 48px);
+            height: min(520px, parent.height - 48px);
+            init => { send-value-editor.focus(); }
+            key-pressed(event) => {
+                if event.text == Key.Escape { root.send-dialog-closed(); return accept; }
+                return reject;
+            }
+            Rectangle {
+                background: #fafdff;
+                border-radius: 12px;
+                VerticalLayout {
+                    padding: 18px;
+                    spacing: 9px;
+                    min-width: 0px;
+                    Text { text: "Send message"; font-size: 22px; font-weight: 700; color: #1e425b; }
+                    Text { text: root.send-topic; color: #36566c; min-width: 0px; wrap: word-wrap; }
+                    ScrollView {
+                        min-width: 0px;
+                        vertical-stretch: 1;
+                        content-width: self.visible-width;
+                        horizontal-scrollbar-policy: always-off;
+                        VerticalLayout {
+                            padding-right: 8px;
+                            spacing: 9px;
+                            alignment: start;
+                            min-width: 0px;
+                            VerticalLayout {
+                                spacing: 4px;
+                                min-width: 0px;
+                                HorizontalLayout {
+                                    height: 32px;
+                                    spacing: 8px;
+                                    Text { width: 58px; text: "Partition"; color: #36566c; font-size: 12px; vertical-alignment: center; }
+                                    ComboBox {
+                                        width: 160px;
+                                        height: 32px;
+                                        model: root.send-partition-choices;
+                                        accessible-label: "Partition";
+                                        current-value <=> root.send-partition;
+                                        selected(value) => { root.send-partition = value; root.send-form-changed(); }
+                                    }
+                                    Rectangle { horizontal-stretch: 1; }
+                                }
+                                if root.send-partition-error != "" : Text { text: root.send-partition-error; color: #a92d37; font-size: 11px; min-width: 0px; wrap: word-wrap; }
+                            }
+                            Text { text: "Automatic lets Kafka choose a partition. Select an ID to send to a fixed partition."; color: #64766a; font-size: 12px; min-width: 0px; wrap: word-wrap; }
+                            Text { text: "Key (optional text)"; color: #36566c; font-size: 12px; }
+                            Rectangle {
+                                height: 56px;
+                                min-width: 0px;
+                                background: #ffffff;
+                                border-color: #d8e3ec;
+                                border-width: 1px;
+                                border-radius: 7px;
+                                Rectangle { width: 42px; height: parent.height; background: #f8fafc; }
+                                Rectangle { x: 41px; width: 1px; height: parent.height; background: #d8e3ec; }
+                                Text { x: 4px; y: 20px; width: 32px; height: parent.height - 28px; text: root.send-key-line-numbers; color: #94a3b8; font-size: 12px; font-family: "Consolas"; horizontal-alignment: right; vertical-alignment: top; }
+                                TextEdit {
+                                    x: 52px;
+                                    y: 8px;
+                                    width: parent.width - 62px;
+                                    height: parent.height - 16px;
+                                    text <=> root.send-key;
+                                    accessible-label: "Message key, optional";
+                                    wrap: word-wrap;
+                                    font-family: "Consolas";
+                                    font-size: 12px;
+                                    edited(text) => { root.send-key = text; root.send-form-changed(); }
+                                }
+                            }
+                            HorizontalLayout {
+                                height: 28px;
+                                min-width: 0px;
+                                Text { text: "Value (required text)"; color: #36566c; font-size: 12px; vertical-alignment: center; horizontal-stretch: 1; }
+                                Button { width: 96px; height: 28px; text: "JSON Beauty"; clicked => { root.send-value-json-beauty-requested(); } }
+                            }
+                            Rectangle {
+                                height: 190px;
+                                min-width: 0px;
+                                background: #ffffff;
+                                border-color: #d8e3ec;
+                                border-width: 1px;
+                                border-radius: 7px;
+                                Rectangle { width: 42px; height: parent.height; background: #f8fafc; }
+                                Rectangle { x: 41px; width: 1px; height: parent.height; background: #d8e3ec; }
+                                Text { x: 4px; y: 20px; width: 32px; height: parent.height - 28px; text: root.send-value-line-numbers; color: #94a3b8; font-size: 12px; font-family: "Consolas"; horizontal-alignment: right; vertical-alignment: top; }
+                                send-value-editor := TextEdit {
+                                    x: 52px;
+                                    y: 8px;
+                                    width: parent.width - 62px;
+                                    height: parent.height - 16px;
+                                    text <=> root.send-value;
+                                    accessible-label: "Message value, required";
+                                    wrap: word-wrap;
+                                    font-family: "Consolas";
+                                    font-size: 12px;
+                                    edited(text) => { root.send-value = text; root.send-form-changed(); }
+                                }
+                            }
+                            if root.send-value-error != "" : Text { text: root.send-value-error; color: #a92d37; font-size: 12px; min-width: 0px; wrap: word-wrap; }
+                        }
+                    }
+                    if root.delivery-pending : Text { text: "Sending... " + root.delivery-elapsed; color: #64766a; font-size: 12px; }
+                    HorizontalLayout {
+                        spacing: 10px;
+                        DangerButton { text: "Close"; clicked => { root.send-dialog-closed(); } }
+                        Rectangle { horizontal-stretch: 1; }
+                        Button { height: 32px; text: root.delivery-pending ? "Sending..." : "Send"; primary: true; enabled: !root.delivery-pending; clicked => { root.send-requested(); } }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.route == "workspace" && root.delivery-notice != "" : Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: #0b315466;
+        TouchArea {}
+        Rectangle {
+            width: min(450px, parent.width - 48px);
+            height: root.delivery-success ? 205px : 230px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: #ffffff;
+            border-radius: 14px;
+            border-width: 1px;
+            border-color: root.delivery-success ? #1677d2 : #f05d5e;
+            VerticalLayout {
+                padding: 18px;
+                spacing: 12px;
+                HorizontalLayout {
+                    height: 42px;
+                    spacing: 12px;
+                    Rectangle {
+                        width: 38px;
+                        height: 38px;
+                        border-radius: 19px;
+                        background: root.delivery-success ? #dceffb : #ffe1e6;
+                        Text {
+                            text: root.delivery-success ? "✓" : "!";
+                            color: root.delivery-success ? #1677d2 : #d9485f;
+                            font-size: 22px;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                    VerticalLayout {
+                        spacing: 2px;
+                        Text { text: root.delivery-success ? "Message sent" : "Message not sent"; font-size: 18px; font-weight: 700; color: root.delivery-success ? #1677d2 : #d9485f; }
+                        Text { text: root.delivery-success ? "Kafka accepted your message." : "Kafka did not accept your message."; color: #52718f; }
+                    }
+                }
+                Rectangle {
+                    vertical-stretch: 1;
+                    background: #f3f8fd;
+                    border-color: #d9e8f6;
+                    border-width: 1px;
+                    border-radius: 8px;
+                    ScrollView {
+                        width: parent.width;
+                        height: parent.height;
+                        content-width: self.visible-width;
+                        horizontal-scrollbar-policy: always-off;
+                        Text { width: parent.width; text: root.delivery-notice; wrap: word-wrap; color: #355b7d; }
+                    }
+                }
+                HorizontalLayout {
+                    height: 32px;
+                    Rectangle { horizontal-stretch: 1; }
+                    DangerButton { text: "Close"; width: 70px; clicked => { root.delivery-notice-dismissed(); } }
+                }
+            }
+        }
+    }
+
+    if root.export-warning-visible || root.import-conflict-name != "" || root.delete-confirmation-visible : Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: #18352799;
+        TouchArea {}
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 580px;
+            height: root.export-warning-visible ? 250px : root.delete-confirmation-visible ? 210px : 340px;
+            background: #fafdff;
+            border-radius: 12px;
+            VerticalLayout {
+                padding: 24px;
+                spacing: 16px;
+                Text {
+                    text: root.export-warning-visible ? "Export plaintext secrets?" : root.delete-confirmation-visible ? "Delete saved connection?" : "Connection name already exists";
+                    font-size: 22px;
+                    font-weight: 700;
+                    color: #1e425b;
+                    wrap: word-wrap;
+                }
+                if root.export-warning-visible : Text {
+                    text: "The exported JSON contains passwords, private keys, and private-key passwords in plaintext. Anyone with the file can read them. Save it only in a secure location.";
+                    wrap: word-wrap;
+                    color: #a92d37;
+                }
+                if root.delete-confirmation-visible : Text {
+                    text: "Delete ‘" + root.delete-profile-name + "’? This cannot be undone. If it is active, Kafka will be disconnected.";
+                    wrap: word-wrap;
+                    color: #a92d37;
+                    font-size: 15px;
+                }
+                if root.import-conflict-name != "" : VerticalLayout {
+                    spacing: 12px;
+                    Text { text: "Importing ‘" + root.import-conflict-name + "’ conflicts with another connection. Rename the incoming connection or explicitly replace the existing one."; wrap: word-wrap; color: #36566c; }
+                    LineEdit { text <=> root.import-rename; enabled: !root.operation-pending; }
+                    Text { text: root.error-diagnostic; wrap: word-wrap; color: #a92d37; }
+                }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout {
+                    spacing: 10px;
+                    DangerButton {
+                        text: "Cancel";
+                        enabled: !root.operation-pending;
+                        clicked => {
+                            if root.export-warning-visible { root.export-warning-visible = false; }
+                            else if root.delete-confirmation-visible { root.delete-cancelled(); }
+                            else { root.import-cancelled(); }
+                        }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    if root.export-warning-visible : Button { text: "Continue to Save"; enabled: !root.operation-pending; clicked => { root.export-confirmed(); } }
+                    if root.delete-confirmation-visible : DangerButton { text: "Delete"; enabled: !root.operation-pending; clicked => { root.delete-confirmed(); } }
+                    if root.import-conflict-name != "" : Button { text: "Rename"; enabled: !root.operation-pending && root.import-rename != ""; clicked => { root.import-renamed(root.import-rename); } }
+                    if root.import-conflict-name != "" : Button { text: "Replace"; enabled: !root.operation-pending; clicked => { root.import-replaced(); } }
+                }
+            }
+        }
+    }
+}

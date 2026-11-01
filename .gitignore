@@ -1,0 +1,22 @@
+# Rust build output
+/target/
+/target-nmake/
+
+# Keep distributable ZIP files only; ignore extracted packages and other artifacts.
+/dist/*
+!/dist/*.zip
+
+# Local connection profiles can contain credentials.
+/connections.json
+
+# Internal planning and session state.
+/.superpowers/
+/docs/
+
+# Editor and operating system files.
+/.vscode/
+/.idea/
+*.user
+*.suo
+.DS_Store
+Thumbs.db
