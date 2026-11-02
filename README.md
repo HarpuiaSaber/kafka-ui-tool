@@ -1,4 +1,4 @@
-# Kafa UI Tool
+# Kafka UI Tool
 
 Windows-first Kafka explorer built with Rust, Slint, Tokio, and rdkafka. It
 does not use a WebView.
@@ -11,7 +11,7 @@ OpenSSL, so CMake and Perl must be available. The first build can take several
 minutes while native dependencies compile.
 
 Double-click `build-windows.bat`, or run it from Command Prompt. It runs
-release tests, builds the executable, and writes `dist/kafa-ui-tool.zip`.
+release tests, builds the executable, and writes `dist/kafka-ui-tool.zip`.
 The receiving Windows x64 machine does not need Rust; it may need the Microsoft
 Visual C++ Redistributable for x64.
 
@@ -22,7 +22,7 @@ rendering is unavailable, open Command Prompt in the extracted app directory:
 
 ```bat
 set SLINT_BACKEND=software
-kafa-ui-tool.exe
+kafka-ui-tool.exe
 ```
 
 The setting affects only that terminal. You may create a separate local batch

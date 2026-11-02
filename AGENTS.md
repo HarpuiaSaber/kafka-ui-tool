@@ -15,7 +15,7 @@ create commits unless the user explicitly asks.
   `cargo test` when the user permits it. State clearly if compilation was not
   run.
 - `build-windows.bat` is the user-operated Windows release path. It runs
-  release tests, builds with `target-nmake`, and creates `dist/kafa-ui-tool.zip`.
+  release tests, builds with `target-nmake`, and creates `dist/kafka-ui-tool.zip`.
 - The first Windows release build can take several minutes because rdkafka uses
   bundled OpenSSL. Do not claim a build succeeded without its actual output.
 
@@ -33,7 +33,7 @@ create commits unless the user explicitly asks.
 
 ## Current connection architecture
 
-- Profiles are stored per Windows user in `%LOCALAPPDATA%\Kafa UI Tool\connections.dat`, encrypted with current-user DPAPI. Never log plaintext secrets.
+- Profiles are stored per Windows user in `%LOCALAPPDATA%\Kafka UI Tool\connections.dat`, encrypted with current-user DPAPI. The first run migrates the legacy `Kafa UI Tool` directory when no new directory exists. Never log plaintext secrets.
 - Portable export is plaintext JSON containing passwords and embedded certificate/key material; retain its explicit warning.
 - Supported modes: PLAINTEXT, SSL, SASL/PLAIN, SASL/SCRAM-SHA-256, and SASL/SCRAM-SHA-512. SSL/SASL_SSL require a CA; client certificates and keys must be paired.
 - The window icon is initialized by `ui/app.slint` before native window creation; retain both the embedded PNG for Slint and the ICO resource for packaged Windows executables. SASL validation is field-specific: username and password errors must remain separate.

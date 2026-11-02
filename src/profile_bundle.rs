@@ -391,7 +391,7 @@ mod tests {
     impl TestRoot {
         fn new() -> Self {
             let path =
-                std::env::temp_dir().join(format!("kafa-bundle-test-{}", uuid::Uuid::new_v4()));
+                std::env::temp_dir().join(format!("kafka-bundle-test-{}", uuid::Uuid::new_v4()));
             fs::create_dir(&path).unwrap();
             Self(path)
         }

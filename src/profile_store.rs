@@ -57,7 +57,10 @@ impl ProfileStore {
         let local_app_data = std::env::var_os("LOCALAPPDATA")
             .filter(|value| !value.is_empty())
             .ok_or(StoreError::LocalAppDataUnavailable)?;
-        Self::at_root(PathBuf::from(local_app_data).join("Kafa UI Tool"))
+        let local_app_data = PathBuf::from(local_app_data);
+        let root = local_app_data.join("Kafka UI Tool");
+        migrate_legacy_profile_directory(&local_app_data.join("Kafa UI Tool"), &root)?;
+        Self::at_root(root)
     }
 
     #[cfg(test)]
@@ -144,6 +147,14 @@ impl ProfileStore {
     }
 }
 
+/// Move the old application directory only when no directory exists at the new path.
+fn migrate_legacy_profile_directory(legacy_root: &Path, root: &Path) -> Result<(), StoreError> {
+    if legacy_root.exists() && !root.exists() {
+        fs::rename(legacy_root, root).map_err(|error| io_error("migrate legacy", error))?;
+    }
+    Ok(())
+}
+
 fn io_error(operation: &'static str, error: io::Error) -> StoreError {
     StoreError::Io {
         operation,
@@ -228,7 +239,7 @@ mod tests {
     impl TestRoot {
         fn new() -> Self {
             let root = std::env::temp_dir()
-                .join(format!("kafa-profile-store-test-{}", uuid::Uuid::new_v4()));
+                .join(format!("kafka-profile-store-test-{}", uuid::Uuid::new_v4()));
             fs::create_dir(&root).unwrap();
             Self(root)
         }
@@ -317,6 +328,24 @@ mod tests {
 
         assert!(store.load().unwrap().is_empty());
         assert!(!store.path().exists());
+    }
+
+    #[test]
+    fn migrates_legacy_profile_directory_when_new_directory_is_absent() {
+        let root = TestRoot::new();
+        let legacy_root = root.0.join("Kafa UI Tool");
+        let new_root = root.0.join("Kafka UI Tool");
+        fs::create_dir_all(legacy_root.join("certificates")).unwrap();
+        fs::write(legacy_root.join("connections.dat"), b"encrypted-fixture").unwrap();
+
+        migrate_legacy_profile_directory(&legacy_root, &new_root).unwrap();
+
+        assert!(!legacy_root.exists());
+        assert_eq!(
+            fs::read(new_root.join("connections.dat")).unwrap(),
+            b"encrypted-fixture"
+        );
+        assert!(new_root.join("certificates").is_dir());
     }
 
     #[test]

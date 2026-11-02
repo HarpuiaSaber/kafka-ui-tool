@@ -2829,7 +2829,7 @@ mod tests {
     impl TestRoot {
         fn new() -> Self {
             Self(
-                std::env::temp_dir().join(format!("kafa-controller-test-{}", uuid::Uuid::new_v4())),
+                std::env::temp_dir().join(format!("kafka-controller-test-{}", uuid::Uuid::new_v4())),
             )
         }
         fn session(&self) -> StorageSession {

@@ -295,7 +295,7 @@ fn explorer_consumer(
     config
         .set(
             "group.id",
-            format!("kafa-explorer-{}", uuid::Uuid::new_v4()),
+            format!("kafka-explorer-{}", uuid::Uuid::new_v4()),
         )
         .set("enable.auto.commit", "false")
         .set("enable.auto.offset.store", "false")
