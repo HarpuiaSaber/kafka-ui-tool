@@ -456,7 +456,6 @@ fn topic_rows(topics: &[explorer::TopicSummary], filter: &str) -> Vec<TopicRow> 
     explorer::topic_filter(topics, filter)
         .into_iter()
         .map(|topic| TopicRow {
-            preview_wide: topic.name.chars().count() > 27,
             name: topic.name.into(),
             partition_count: topic.partition_count.to_string().into(),
         })
@@ -854,6 +853,7 @@ fn update_explorer_snapshot(window: &MainWindow, state: &connection_controller::
     window.set_record_offset(record.offset.into());
     window.set_record_timestamp(record.timestamp.into());
     window.set_record_key(record.key.into());
+    window.set_record_raw_value(record.value.clone().into());
     window.set_record_value(record.value.into());
     window.set_record_key_line_numbers(record.key_line_numbers.into());
     window.set_record_value_line_numbers(record.value_line_numbers.into());
@@ -1496,6 +1496,14 @@ fn bind_explorer_controller(
             window.set_record_value(value.into());
         }
     });
+    let weak = window.as_weak();
+    window.on_record_value_raw_requested(move || {
+        if let Some(window) = weak.upgrade() {
+            let value = window.get_record_raw_value();
+            window.set_record_value_line_numbers(line_numbers(value.as_str()).into());
+            window.set_record_value(value);
+        }
+    });
     let opening = controller.clone();
     window.on_send_dialog_requested(move || opening.open_send_dialog());
     let edited = controller.clone();
@@ -1572,16 +1580,30 @@ mod explorer_form_tests {
     }
 
     #[test]
-    fn message_paging_actions_share_the_page_status_row() {
+    fn message_paging_keeps_actions_centered_between_edge_statuses() {
         let ui = include_str!("../ui/app.slint");
         let results = ui
             .split("if root.search-has-results && root.search-result-count > 0 : VerticalLayout")
             .nth(1)
             .expect("message results layout");
 
-        assert!(results.contains("Text { text: \"Page \" + root.page-number + \" of \" + root.page-count;"));
+        assert!(results.contains("Text { min-width: 0px; horizontal-stretch: 1; text: root.search-result-count"));
+        assert!(results.contains("HorizontalLayout {\n                                        width: 128px;"));
         assert!(results.contains("Button { width: 68px; height: 28px; text: \"Previous\";"));
         assert!(results.contains("Button { width: 52px; height: 28px; text: \"Next\";"));
+        assert!(results.contains("Text { min-width: 0px; horizontal-stretch: 1; horizontal-alignment: right; text: \"Page \" + root.page-number + \" of \" + root.page-count;"));
+    }
+
+    #[test]
+    fn delivery_notice_close_uses_a_primary_button() {
+        let ui = include_str!("../ui/app.slint");
+        let notice = ui
+            .split("if root.route == \"workspace\" && root.delivery-notice != \"\" : Rectangle")
+            .nth(1)
+            .expect("delivery notice layout");
+
+        assert!(notice.contains("Button { text: \"Close\"; width: 70px; primary: true; clicked => { root.delivery-notice-dismissed(); } }"));
+        assert!(!notice.contains("DangerButton { text: \"Close\"; width: 70px; clicked => { root.delivery-notice-dismissed(); } }"));
     }
 
     #[test]

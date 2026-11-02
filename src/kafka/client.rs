@@ -525,14 +525,16 @@ pub fn search_records(
             return result;
         }
         let window = (|| {
-            let Some((cached_start, end)) =
-                cached_read_window(partition.low_offset, partition.high_offset, query)?
+            let (low, high) = consumer
+                .fetch_watermarks(topic, partition.id, KAFKA_TIMEOUT)
+                .map_err(|error| ExplorerKafkaError::from_kafka("Read search watermarks", error))?;
+            check_cancel(cancel)?;
+            let Some((cached_start, end)) = current_read_window(low, high, query)?
             else {
                 return Ok(None);
             };
             let start = match query.timestamp_from {
                 Some(timestamp) => {
-                    let low = partition.low_offset.expect("validated cached offsets");
                     offset_for_timestamp(&consumer, topic, partition.id, timestamp, end, cancel)?
                         .clamp(low, end)
                         .max(cached_start)
@@ -677,6 +679,14 @@ fn cached_read_window(
     }
     let start = read_window_start(low, high, query.order);
     Ok((start < high).then_some((start, high)))
+}
+
+fn current_read_window(
+    low: i64,
+    high: i64,
+    query: &SearchQuery,
+) -> Result<Option<(i64, i64)>, ExplorerKafkaError> {
+    cached_read_window(Some(low), Some(high), query)
 }
 
 #[cfg(test)]
@@ -1014,8 +1024,9 @@ mod tests {
     use crate::models::{ConnectionProfile, SaslMechanism, SaslTransport, Secret, TlsSettings};
 
     use super::{
-        build_client_config, cached_read_window, load_topic_detail, load_topics, probe_connection,
-        producer_record_for, read_window_start, record_data, scan_partition, search_records,
+        build_client_config, cached_read_window, current_read_window, load_topic_detail,
+        load_topics, probe_connection, producer_record_for, read_window_start, record_data,
+        scan_partition, search_records,
         send_record, ConnectionFailureKind, ConnectionProbeError, ExplorerKafkaError, ScanEvent,
     };
 
@@ -1044,6 +1055,17 @@ mod tests {
         assert_eq!(
             cached_read_window(Some(7), Some(7), &SearchQuery::default()).unwrap(),
             None
+        );
+    }
+
+    #[test]
+    fn current_watermark_window_includes_records_added_after_metadata_loaded() {
+        let cached_high = 10;
+        let broker_high = cached_high + 1;
+
+        assert_eq!(
+            current_read_window(3, broker_high, &SearchQuery::default()).unwrap(),
+            Some((3, 11))
         );
     }
 

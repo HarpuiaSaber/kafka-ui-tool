@@ -10,7 +10,6 @@ export struct SavedConnection {
 export struct TopicRow {
     name: string,
     partition-count: string,
-    preview-wide: bool,
 }
 
 export struct PartitionRow {
@@ -47,7 +46,7 @@ component MessageField inherits VerticalLayout {
     horizontal-stretch: 0;
     vertical-stretch: 0;
     spacing: 4px;
-    Text { height: 12px; text: root.label; color: #334155; font-size: 10px; font-weight: 700; letter-spacing: 1px; }
+    Text { height: 16px; text: root.label; color: #334155; font-size: 10px; font-weight: 700; letter-spacing: 1px; vertical-alignment: center; }
     field := Rectangle {
         height: 32px;
         min-width: 0px;
@@ -92,49 +91,16 @@ component MessageSelect inherits VerticalLayout {
     vertical-stretch: 0;
     spacing: 4px;
     Text { height: 12px; text: root.label; color: #334155; font-size: 10px; font-weight: 700; letter-spacing: 1px; }
-    field := Rectangle {
+    ComboBox {
         height: 32px;
         min-width: 0px;
-        border-radius: 7px;
-        border-width: 1px;
-        border-color: field-touch.has-hover && root.enabled ? #93c5fd : #cbd5e1;
-        background: root.enabled ? #ffffff : #f1f5f9;
-        Text {
-            x: 10px;
-            width: parent.width - 38px;
-            height: parent.height;
-            text: root.value;
-            color: root.enabled ? #334155 : #94a3b8;
-            font-size: 12px;
-            vertical-alignment: center;
-            overflow: elide;
-        }
-        Image { x: parent.width - 22px; y: 12px; width: 12px; height: 8px; source: @image-url("../assets/icons/chevron-down.svg"); }
-        field-touch := TouchArea { enabled: root.enabled; clicked => { popup.show(); } }
+        model: root.choices;
+        current-value <=> root.value;
+        enabled: root.enabled;
+        accessible-label: root.label;
+        selected(value) => { root.value = value; root.selected(); }
     }
     if root.error != "" : Text { text: root.error; color: #a92d37; font-size: 11px; min-width: 0px; wrap: word-wrap; }
-    popup := PopupWindow {
-        x: 0px;
-        y: field.height + 2px;
-        width: root.width;
-        height: min(root.choices.length, 6) * 36px + 2px;
-        close-policy: close-on-click-outside;
-        Rectangle {
-            background: #ffffff;
-            border-color: #cbd5e1;
-            border-width: 1px;
-            border-radius: 7px;
-            VerticalLayout {
-                spacing: 0px;
-                for choice[index] in root.choices : Rectangle {
-                    height: 36px;
-                    background: choice-touch.has-hover ? #e0f2fe : choice == root.value ? #f0f9ff : #ffffff;
-                    Text { x: 12px; width: parent.width - 24px; height: parent.height; text: choice; color: #334155; font-size: 13px; vertical-alignment: center; }
-                    choice-touch := TouchArea { clicked => { root.value = choice; root.selected(); popup.close(); } }
-                }
-            }
-        }
-    }
 }
 
 component ExplorerNotice inherits Rectangle {
@@ -453,6 +419,7 @@ export component MainWindow inherits Window {
     in-out property <string> record-timestamp;
     in-out property <string> record-key;
     in-out property <string> record-value;
+    in-out property <string> record-raw-value;
     in-out property <string> record-key-line-numbers;
     in-out property <string> record-value-line-numbers;
     in-out property <[HeaderRow]> record-headers;
@@ -474,7 +441,6 @@ export component MainWindow inherits Window {
     in-out property <bool> delivery-success;
 
     property <string> hovered-topic;
-    property <bool> hovered-topic-wide: false;
     property <string> topic-tab: "messages";
     property <string> record-tab: "value";
     property <bool> search-advanced-filters-open: false;
@@ -505,6 +471,7 @@ export component MainWindow inherits Window {
     callback message-selected(int);
     callback message-timestamp-format-toggled();
     callback record-value-json-beauty-requested();
+    callback record-value-raw-requested();
     callback send-dialog-requested();
     callback send-form-changed();
     callback send-value-json-beauty-requested();
@@ -824,9 +791,11 @@ export component MainWindow inherits Window {
                     ListView {
                         min-width: 0px;
                         vertical-stretch: 1;
-                        content-width: self.visible-width;
+                        // Keep topic cards clear of the vertical scrollbar.
+                        content-width: self.visible-width - 12px;
                         horizontal-scrollbar-policy: always-off;
                         for topic in root.topics : Rectangle {
+                            width: parent.width - 12px;
                             height: 64px;
                             background: transparent;
                             Rectangle {
@@ -862,10 +831,8 @@ export component MainWindow inherits Window {
                                 changed has-hover => {
                                     if self.has-hover {
                                         root.hovered-topic = topic.name;
-                                        root.hovered-topic-wide = topic.preview-wide;
                                     } else if root.hovered-topic == topic.name {
                                         root.hovered-topic = "";
-                                        root.hovered-topic-wide = false;
                                     }
                                 }
                                 clicked => {
@@ -1154,11 +1121,17 @@ export component MainWindow inherits Window {
                                 spacing: 10px;
                                 min-width: 0px;
                                 HorizontalLayout {
+                                    height: 28px;
+                                    spacing: 0px;
                                     min-width: 0px;
-                                    Text { text: root.search-result-count + " matching messages"; color: #075985; font-size: 13px; font-weight: 700; horizontal-stretch: 1; }
-                                    Text { text: "Page " + root.page-number + " of " + root.page-count; color: #64748b; font-size: 11px; }
-                                    Button { width: 68px; height: 28px; text: "Previous"; enabled: root.previous-page-enabled && !root.send-dialog-open; clicked => { root.page-requested(-1); } }
-                                    Button { width: 52px; height: 28px; text: "Next"; enabled: root.next-page-enabled && !root.send-dialog-open; clicked => { root.page-requested(1); } }
+                                    Text { min-width: 0px; horizontal-stretch: 1; text: root.search-result-count + " matching messages"; color: #075985; font-size: 13px; font-weight: 700; vertical-alignment: center; overflow: elide; }
+                                    HorizontalLayout {
+                                        width: 128px;
+                                        spacing: 8px;
+                                        Button { width: 68px; height: 28px; text: "Previous"; enabled: root.previous-page-enabled && !root.send-dialog-open; clicked => { root.page-requested(-1); } }
+                                        Button { width: 52px; height: 28px; text: "Next"; enabled: root.next-page-enabled && !root.send-dialog-open; clicked => { root.page-requested(1); } }
+                                    }
+                                    Text { min-width: 0px; horizontal-stretch: 1; horizontal-alignment: right; text: "Page " + root.page-number + " of " + root.page-count; color: #64748b; font-size: 11px; vertical-alignment: center; overflow: elide; }
                                 }
                                 VerticalLayout {
                                     height: 400px;
@@ -1232,7 +1205,8 @@ export component MainWindow inherits Window {
                                     MessageDetailTab { x: 84px; width: 80px; text: "Key"; icon: @image-url("../assets/icons/key.svg"); active: root.record-tab == "key"; enabled: !root.send-dialog-open; clicked => { root.record-tab = "key"; } }
                                     MessageDetailTab { x: 156px; width: 122px; text: "Headers (" + root.record-header-count + ")"; icon: @image-url("../assets/icons/list.svg"); active: root.record-tab == "headers"; enabled: !root.send-dialog-open; clicked => { root.record-tab = "headers"; } }
                                 }
-                                Text { x: 302px; y: 32px; width: parent.width - 422px; height: 32px; text: "Partition " + root.record-partition + "  |  Offset " + root.record-offset + "  |  Timestamp: " + root.record-timestamp; color: #0f172a; font-size: 11px; vertical-alignment: center; overflow: elide; }
+                                Text { x: 302px; y: 32px; width: parent.width - 492px; height: 32px; text: "Partition " + root.record-partition + "  |  Offset " + root.record-offset + "  |  Timestamp: " + root.record-timestamp; color: #0f172a; font-size: 11px; vertical-alignment: center; overflow: elide; }
+                                Button { x: parent.width - 178px; y: 34px; width: 60px; height: 28px; text: "Raw"; enabled: root.record-value != root.record-raw-value && !root.send-dialog-open; clicked => { root.record-value-raw-requested(); } }
                                 Button { x: parent.width - 108px; y: 34px; width: 96px; height: 28px; text: "JSON Beauty"; enabled: !root.send-dialog-open; clicked => { root.record-value-json-beauty-requested(); } }
                                 detail-content := Rectangle {
                                     x: 12px;
@@ -1299,7 +1273,7 @@ export component MainWindow inherits Window {
     if root.route == "workspace" && root.hovered-topic != "" && !root.send-dialog-open : Rectangle {
         x: 14px;
         y: 224px;
-        width: root.hovered-topic-wide ? min(420px, parent.width - self.x - 20px) : 200px;
+        width: min(max(200px, tooltip-text.preferred-width + 24px), parent.width - self.x - 20px);
         height: 36px;
         background: #173f78;
         border-color: #0f3261;
@@ -1307,7 +1281,7 @@ export component MainWindow inherits Window {
         border-radius: 7px;
         drop-shadow-blur: 8px;
         drop-shadow-color: #173f7844;
-        Text {
+        tooltip-text := Text {
             x: 12px;
             y: 5px;
             width: parent.width - 24px;
@@ -1499,7 +1473,7 @@ export component MainWindow inherits Window {
                 HorizontalLayout {
                     height: 32px;
                     Rectangle { horizontal-stretch: 1; }
-                    DangerButton { text: "Close"; width: 70px; clicked => { root.delivery-notice-dismissed(); } }
+                    Button { text: "Close"; width: 70px; primary: true; clicked => { root.delivery-notice-dismissed(); } }
                 }
             }
         }
